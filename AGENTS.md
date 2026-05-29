@@ -1,14 +1,28 @@
-# eBook AutoWriter for Codex v2.0
+# eBook AutoWriter for Codex v3.0
 
-電子書籍（25,000字・5章構成）をリサーチ → 執筆 → メタデータ → 表紙 → A+画像 → 申請データまで一括生成。
-**全Phase末に検証スクリプトを実行し、不合格なら再実行する。**
+電子書籍（25,000字・5章構成）を対話型でリサーチ → 執筆 → メタデータ → 表紙 → A+画像 → 申請データまで一括生成。
+**要所でユーザー確認を挟み、承認後に自動進行する。**
 
 ## 言語
 
 - 日本語で応答する
 - プロンプト・技術用語は英語OK
 
-## 最重要ルール（前回失敗からの教訓）
+## 起動方法
+
+ユーザーが「スタート」と入力したら、以下の質問を順番に行う:
+
+```
+電子書籍の制作を開始します。以下を教えてください。
+
+1. テーマ（必須）: どんな内容の本ですか？
+2. 著者名（必須）: Kindle出版時の著者名
+3. 参考資料（任意）: URL、ファイル、テキストなど
+```
+
+回答を受け取ったら、Phase 1 から自動開始する。
+
+## 最重要ルール
 
 ```
 1. 「ファイルが存在する」≠「完了」。内容の品質チェックが必須
@@ -17,35 +31,55 @@
 4. DOCX変換はCodexの責務ではない（pandoc/python-docx不要）
 5. 画像はファイルサイズ50KB以上を必須とする（ダミー禁止）
 6. 原稿の同一文反復は禁止（n-gram重複率15%未満を厳守）
+7. 原稿はHTML形式で出力する（Markdown原稿とは別にHTMLも生成）
 ```
 
-## 全体フロー（9フェーズ）
+## 全体フロー（対話型・7チェックポイント）
 
 ```
-Phase 1  → 参考資料の受け取り
-Phase 2  → 5層ディープリサーチ        → validate_research.py
-Phase 2.5 → タイトル10案 & 基本情報確定（★唯一のユーザー確認）→ validate_meta.py
-Phase 3  → 構成設計（目次）
-Phase 4  → 原稿執筆 25,000字          → validate_manuscript.py
-Phase 5  → 出版メタデータ生成         → validate_listing.py
-Phase 6  → 表紙プロンプト + 画像生成  → validate_images.py cover
-Phase 7  → A+コンテンツ画像4枚生成    → validate_images.py aplus
-Phase 8  → Kindle申請データ出力       → validate_kindle_app.py
-Phase 9  → 統合検証                   → validate_all.py
+「スタート」
+  ↓ テーマ・著者名・参考資料を質問
+Phase 1: 入力受付
+  ↓
+Phase 2: 5層ディープリサーチ → validate_research.py
+  ↓
+★確認1: タイトル10案提案 → ユーザーがタイトル・サブタイトルを確定
+★確認2: 構成（目次）提示 → ユーザーが承認
+  ↓ 承認後、一気に自動生成 ↓
+Phase 3: 原稿執筆 25,000字（HTML + Markdown）→ validate_manuscript.py
+Phase 4: 出版メタデータ生成 → validate_listing.py
+Phase 5: Kindle申請データ生成 → validate_kindle_app.py
+  ↓ ここで一旦停止 ↓
+★確認3: 表紙プロンプト確認（入稿前）
+  ↓ 承認後 ↓
+Phase 6: 表紙画像生成（gpt-image-2）→ validate_images.py cover
+  ↓
+★確認4: 表紙画像の確認
+  ↓ 承認後 ↓
+★確認5: A+コンテンツ4枚のプロンプト確認
+  ↓ 承認後 ↓
+Phase 7: A+画像4枚生成（gpt-image-2）→ validate_images.py aplus
+  ↓
+★確認6: A+画像4枚の確認
+  ↓ 承認後 ↓
+Phase 8: 統合検証 → validate_all.py
+  ↓
+★確認7: 最終出力の確認・完了報告
 ```
 
-**旧Phase 5（DOCX変換）は削除。** Codexの成果物はMarkdown + 画像 + メタデータ。DOCX変換はローカル環境で実行する。
+## チェックポイントのルール
 
-## 自動進行ルール
-
-Phase 2.5（タイトル確定）のみユーザー確認。他はすべて自動進行。
-ただし **各Phase末の検証スクリプトがNGの場合、そのPhaseを再実行してからでないと次に進まない。**
+- ★マークのタイミングでは**必ずユーザーに確認を求めて停止する**
+- ユーザーが「OK」「進めて」等で承認したら次へ進む
+- ユーザーが修正指示を出したら修正してから再確認
+- ★マーク以外のPhaseは確認なしで自動進行する
 
 ## 成果物一覧
 
 ```
 output/{slug}/
 ├── manuscript.md             # Markdown原稿（25,000字以上）
+├── manuscript.html           # HTML原稿（DOCX変換用）
 ├── research.md               # リサーチ結果（3,000字以上・URL15件以上）
 ├── book_meta.md              # 確定メタ情報（タイトル・著者）
 ├── listing.txt               # 出版メタデータ（3,000字以上）
@@ -60,19 +94,18 @@ output/{slug}/
     └── aplus_4.png           # A+ CTA（>30KB）
 ```
 
-**注意: manuscript.docx はCodexでは生成しない。ローカルでpandoc変換する。**
-
 ---
 
-## Phase 1: 参考資料の受け取り
+## Phase 1: 入力受付
 
-ユーザーからテーマと参考資料を受け取る。
+ユーザーからテーマ・著者名・参考資料を受け取る。
 
-受け取れる形式:
+受け取れる参考資料の形式:
 - ファイル（PDF、テキスト、Markdown、DOCX）
 - URL（Web検索で内容取得）
 - テキスト（直接貼り付け）
 - 複数資料の組み合わせ
+- なし（テーマのみでもOK）
 
 受け取ったら即座にPhase 2へ進む。
 
@@ -193,11 +226,13 @@ python scripts/validate_research.py output/{slug}
 
 ---
 
-## Phase 2.5: タイトル提案 & 基本情報確定（★唯一のユーザー確認ポイント）
+## ★確認1: タイトル・サブタイトル確定
 
-### このフェーズだけはユーザー確認を行う
+リサーチ完了後、**ユーザーに確認を求めて停止する。**
 
-1. リサーチ結果から「次が読みたくなる」書籍構成案を1つ提案
+### 提示する内容
+
+1. リサーチ結果のサマリー（各Layer の要点を3行程度ずつ）
 2. 売れるタイトル/サブタイトル案を**10個**生成（以下の型を必ず混ぜる）
 
 | # | 型 | 例 |
@@ -214,13 +249,14 @@ python scripts/validate_research.py output/{slug}
 | 10 | 権威・最新型 | 「2026年最新版 〇〇のすべて」 |
 
 3. ユーザーに確定してもらう:
-   - タイトル + サブタイトル（10案から選択 or 改変 or 新規）
-   - 著者名（必須・空欄不可）
+   - タイトル + サブタイトル（番号選択 or 改変 or 新規）
 
-4. 確定情報を `output/{slug}/book_meta.md` に保存:
+### 確定後の処理
+
+確定情報を `output/{slug}/book_meta.md` に保存:
 
 ```markdown
-# 書籍メタ情報（Phase 2.5 で確定）
+# 書籍メタ情報
 
 - **タイトル**: {確定タイトル}
 - **サブタイトル**: {確定サブタイトル}
@@ -229,21 +265,19 @@ python scripts/validate_research.py output/{slug}
 - **確定日**: YYYY-MM-DD
 ```
 
-### Phase 2.5 完了時の検証（必須）
-
 ```bash
 python scripts/validate_meta.py output/{slug}
 ```
 
-**確定するまで次のPhaseに進まない。確定後は自動進行を再開。**
+**ユーザーが確定するまで次に進まない。**
 
 ---
 
-## Phase 3: 構成設計
+## ★確認2: 構成（目次）確認
 
-`book_meta.md` が確定済みであることを確認し、目次を詳細化する。
+タイトル確定後、目次を設計してユーザーに提示する。
 
-### 目次テンプレート
+### 提示する目次
 
 ```
 書籍タイトル: {確定タイトル}
@@ -254,9 +288,13 @@ python scripts/validate_meta.py output/{slug}
   - この本の目的 / 読者への約束 / 本書の使い方
 
 第1章: {章タイトル}（4,000〜5,000字）
-  1.1〜1.5 各節
+  1.1 {節タイトル}
+  1.2 {節タイトル}
+  1.3 {節タイトル}
+  1.4 {節タイトル}
+  1.5 {節タイトル}
 
-第2章〜第5章: 同上の形式
+第2章〜第5章: 同上の形式（各5節）
 
 おわりに（1,200〜1,500字）
 ```
@@ -268,11 +306,186 @@ python scripts/validate_meta.py output/{slug}
 - 読者が「次に何をすればいいか」がわかる
 - 各章に最低5節（### 見出し）を設ける
 
-確認なしでPhase 4へ進む。
+**ユーザーが「OK」と承認したら、Phase 3〜5 を一気に自動実行する。**
 
 ---
 
-## Phase 4: 原稿執筆（25,000字）
+## Phase 3: 原稿執筆（25,000字・HTML + Markdown）
+
+**構成が承認されたら、Phase 3〜5 は確認なしで一気に自動実行する。**
+
+### 出力形式
+
+原稿は**2つの形式**で出力する:
+
+1. `manuscript.md` — Markdown形式（検証・変換用）
+2. `manuscript.html` — HTML形式（最終成果物）
+
+### HTML出力の仕様（Kindle申請可能な品質）
+
+**このHTMLはそのままKindle Direct Publishing（KDP）に申請できるレベルで作り込む。**
+文字装飾（太字・強調）、改ページタグ、目次リンク、段落スタイルをすべて含める。
+
+```html
+<!DOCTYPE html>
+<html lang="ja" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="UTF-8" />
+<title>{書籍タイトル}</title>
+<style type="text/css">
+  /* === Kindle対応 基本スタイル === */
+  body {
+    font-family: serif;
+    line-height: 1.8;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* === 書籍タイトル === */
+  h1 {
+    font-size: 2em;
+    text-align: center;
+    margin: 3em 0 1em;
+    font-weight: bold;
+  }
+
+  /* === 章タイトル（H2）= 改ページ + 装飾 === */
+  h2 {
+    font-size: 1.5em;
+    font-weight: bold;
+    border-bottom: 2px solid #333;
+    padding-bottom: 0.3em;
+    margin-top: 2em;
+    margin-bottom: 1em;
+    page-break-before: always;
+  }
+
+  /* === 節タイトル（H3）= 改ページ + 装飾 === */
+  h3 {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin-top: 2em;
+    margin-bottom: 0.8em;
+    page-break-before: always;
+  }
+
+  /* === 小見出し（H4） === */
+  h4 {
+    font-size: 1.1em;
+    font-weight: bold;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+  }
+
+  /* === 本文段落 === */
+  p {
+    margin: 0.8em 0;
+    text-indent: 1em;
+  }
+
+  /* === 強調・太字 === */
+  strong, b { font-weight: bold; }
+  em, i { font-style: italic; }
+
+  /* === 箇条書き === */
+  ul, ol {
+    margin: 1em 0;
+    padding-left: 2em;
+  }
+  li { margin: 0.3em 0; }
+
+  /* === 補足ボックス（ポイント・注意） === */
+  .note {
+    background: #f5f5f5;
+    border-left: 4px solid #333;
+    padding: 1em;
+    margin: 1.5em 0;
+  }
+  .point {
+    background: #fff8e1;
+    border-left: 4px solid #f9a825;
+    padding: 1em;
+    margin: 1.5em 0;
+  }
+
+  /* === 目次 === */
+  .toc { margin: 2em 0; }
+  .toc a { text-decoration: none; color: #1a0dab; }
+  .toc li { margin: 0.5em 0; list-style: none; }
+
+  /* === 改ページ === */
+  .page-break { page-break-before: always; }
+
+  /* === 区切り線 === */
+  hr {
+    border: none;
+    border-top: 1px solid #ccc;
+    margin: 2em 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== タイトルページ ========== -->
+<div class="page-break" style="text-align: center; margin-top: 30%;">
+  <h1>{書籍タイトル}</h1>
+  <p style="font-size: 1.2em; text-indent: 0;">{サブタイトル}</p>
+  <br /><br />
+  <p style="text-indent: 0;">{著者名}</p>
+</div>
+
+<!-- ========== 目次 ========== -->
+<div class="page-break">
+  <h2>目次</h2>
+  <ul class="toc">
+    <li><a href="#intro">はじめに</a></li>
+    <li><a href="#ch1">第1章: {章タイトル}</a></li>
+    <li><a href="#ch2">第2章: {章タイトル}</a></li>
+    <li><a href="#ch3">第3章: {章タイトル}</a></li>
+    <li><a href="#ch4">第4章: {章タイトル}</a></li>
+    <li><a href="#ch5">第5章: {章タイトル}</a></li>
+    <li><a href="#outro">おわりに</a></li>
+  </ul>
+</div>
+
+<!-- ========== はじめに ========== -->
+<h2 id="intro">はじめに</h2>
+<p>本文を<strong>太字</strong>や<em>強調</em>で装飾しながら執筆する。</p>
+<p>重要なポイントは以下のように表現する:</p>
+<div class="point">
+  <p style="text-indent: 0;"><strong>ポイント:</strong> ここに重要な内容を記載します。</p>
+</div>
+
+<!-- ========== 第1章 ========== -->
+<h2 id="ch1">第1章: {章タイトル}</h2>
+<h3>1.1 {節タイトル}</h3>
+<p>本文...</p>
+
+<h3>1.2 {節タイトル}</h3>
+<p>本文...</p>
+
+<!-- 以下同様に第2章〜第5章、おわりに -->
+
+<!-- ========== おわりに ========== -->
+<h2 id="outro">おわりに</h2>
+<p>本文...</p>
+
+</body>
+</html>
+```
+
+### HTML装飾ルール（Kindle申請品質）
+
+1. **改ページ**: 章（H2）と節（H3）に `page-break-before: always` を適用済み
+2. **太字**: 重要な用語・キーワードは `<strong>` で囲む（各段落に1〜2箇所）
+3. **強調**: 補足的な強調は `<em>` を使用
+4. **ポイントボックス**: 各章に1〜2箇所、`<div class="point">` で重要ポイントを囲む
+5. **補足ボックス**: 注意事項は `<div class="note">` で囲む
+6. **目次リンク**: 各章のIDに `<a href="#ch1">` でジャンプ可能にする
+7. **タイトルページ**: 書籍タイトル・サブタイトル・著者名を中央配置
+8. **箇条書き**: `<ul>/<ol>` で構造化
+9. **段落インデント**: `text-indent: 1em` で日本語書籍の体裁
+10. **句点で改行しない**: HTML版では句点改行は行わない（DOCX版のみの処理）
 
 ### 執筆ルール（厳守）
 
@@ -284,10 +497,9 @@ python scripts/validate_meta.py output/{slug}
   - OK: 「〜です」「〜になります」「〜してみましょう」「〜してください」
 - 段落: 3〜4文ごとに改行
 - 具体例: 各章に最低2つの具体例・事例
-- **画像タグ禁止**: `<!-- [IMAGE] -->` 等は一切使用しない
 - **表（テーブル）禁止**: 比較情報は箇条書きで表現
 - **コードブロック禁止**: コマンドは通常テキストとして記述
-- **ASCII図禁止**: 罫線文字（┌─┐│└─┘等）は使わない
+- **ASCII図禁止**: 罫線文字は使わない
 - **ユーザー名禁止**: 「読者の皆さん」等の一般表現を使用
 - **著者情報禁止**: 原稿本文に著者名・プロフィールを入れない
 
@@ -301,28 +513,26 @@ python scripts/validate_meta.py output/{slug}
 - 各節で異なる具体例・データ・視点を提供する
 - validate_manuscript.py の n-gram重複チェック（15%未満）をパスすること
 
-### 改ページ・整形ルール
+### Markdown版の改ページ・整形ルール
 
 - 各章（`##`）の直前に `\newpage`
 - 各節（`###`）の直前に `\newpage`
 - はじめに・おわりにの直前にも `\newpage`
 - 見出しの前後に空行1行
 - 段落間に空行1行
-- 箇条書きの前後に空行1行
 
-### 見出しレベル
+### 見出しレベル（Markdown / HTML共通）
 
-- `#`: 書籍タイトル（冒頭1回のみ）
-- `##`: 章タイトル（はじめに、第1章〜第5章、おわりに）
-- `###`: 節タイトル（1.1, 1.2, ...）
-- `####`: 小見出し（必要に応じて）
+- H1: 書籍タイトル（冒頭1回のみ）
+- H2: 章タイトル（はじめに、第1章〜第5章、おわりに）
+- H3: 節タイトル（1.1, 1.2, ...）
+- H4: 小見出し（必要に応じて）
 
 ### 章ごとの文字数確認
 
 各章を書き終えたら、その章の文字数を数え、3,500字未満なら加筆する。
-全章完成後、`output/{slug}/manuscript.md` に保存。
 
-### Phase 4 完了時の検証（必須）
+### Phase 3 完了時の検証（必須）
 
 ```bash
 python scripts/validate_manuscript.py output/{slug}
@@ -332,14 +542,16 @@ python scripts/validate_manuscript.py output/{slug}
 - 総字数 >= 25,000
 - 各章 >= 3,500字 / はじめに・おわりに >= 1,000字
 - n-gram重複率 < 15%
-- 禁止パターン（テーブル・コードブロック・ASCII図・画像タグ）なし
+- 禁止パターン（テーブル・コードブロック・ASCII図）なし
 - です/ます調 80%以上
 
-**NGの場合:** 不合格の章を特定し、その章のみ再執筆してmanuscript.mdを更新、再検証。
+**NGの場合:** 不合格の章を特定し、その章のみ再執筆して再検証。
 
 ---
 
-## Phase 5: 出版メタデータ生成
+## Phase 4: 出版メタデータ生成
+
+**確認なしで自動実行（Phase 3 から連続）**
 
 ### 手順
 
@@ -360,7 +572,6 @@ python scripts/validate_manuscript.py output/{slug}
 ```
 
 最重要ルール: メインキーワードは**必ずタイトルに入れる**。
-3案の方向性: 1=網羅性、2=好奇心、3=簡単さ・具体的成果
 
 #### 著者名
 
@@ -372,7 +583,6 @@ python scripts/validate_manuscript.py output/{slug}
 
 - タイトルに含まれるKWは除外
 - 各行内は半角スペース区切り
-- 行ごとにテーマを変える
 
 #### フリガナ
 
@@ -385,30 +595,67 @@ python scripts/validate_manuscript.py output/{slug}
 - 目次を含める（SEO対策）
 - **3,000字未満の場合は必ず加筆して3,000字以上にすること**
 
-### Phase 5 完了時の検証（必須）
+### Phase 4 完了時の検証（必須）
 
 ```bash
 python scripts/validate_listing.py output/{slug}
 ```
 
-**検証基準:**
-- 総字数 >= 3,000
-- タイトル提案 3案以上
-- キーワード 7行以上
-- 著者名・フリガナセクション存在
-- 紹介文 3,000字以上
+---
+
+## Phase 5: Kindle申請データ出力
+
+**確認なしで自動実行（Phase 4 から連続）**
+
+### 生成内容
+
+`templates/kindle_app_template.txt` を参照し、以下を含むこと:
+
+1. タイトル・サブタイトル・著者名（漢字・カタカナ・ローマ字の3表記）
+2. 書籍説明文（PASONA法則 / HTML / 3,000〜4,000字厳守）
+3. カテゴリー5つ（各カテゴリー横に1位書籍の総合ランキング順位を併記）
+4. キーワード30個以上（7マス × 各50文字以内）
+
+### PASONA法則
+
+P: 問題 → A: 煽り・親近感 → S: 解決策 → O: 提案 → N: 絞り込み → A: 行動
+
+- HTML形式（`<p>`, `<strong>` タグ使用）
+- PASONA項目名は本文に出さない
+- **3,000字未満は必ず加筆して3,000字以上にすること**
+
+### Phase 5 完了時の検証（必須）
+
+```bash
+python scripts/validate_kindle_app.py output/{slug}
+```
+
+**Phase 3〜5 完了後、ユーザーに報告して★確認3 へ進む。**
+
+報告メッセージ:
+```
+原稿・メタデータ・申請データの生成が完了しました。
+
+- manuscript.md: {N}字
+- manuscript.html: 生成済み
+- listing.txt: 生成済み
+- kindle_application.txt: 生成済み
+
+次に表紙画像を制作します。プロンプトを確認してください。
+```
 
 ---
 
-## Phase 6: 表紙プロンプト生成 + 画像生成
+## ★確認3: 表紙プロンプト確認（入稿前）
+
+表紙画像を生成する前に、**プロンプトをユーザーに提示して承認を得る。**
 
 ### 手順
 
 1. manuscript.md からジャンル・テーマを自動抽出
-2. スタイル自動選択（A〜E）
-3. カラーパレット自動選択
-4. YAMLプロンプトを `cover_prompt.txt` に出力
-5. gpt-image-2 で表紙画像を生成
+2. スタイルを自動選択（A〜E）
+3. カラーパレットを自動選択
+4. プロンプトを生成して**ユーザーに提示**
 
 ### スタイル自動選択
 
@@ -432,16 +679,16 @@ python scripts/validate_listing.py output/{slug}
 | 副業・稼ぐ系 | #FFF9C4 | #1565C0 | #FF5722 |
 | 心理学 | #0D1B2A | #E8872A | #D4AF37 |
 
-### YAMLプロンプト設計原則
-
-- フラット構造
-- 色はHEX値+色名
-- portrait 2:3 比率
-- **著者名は絶対に入れない**
-
-### gpt-image-2 による表紙画像生成
+### ユーザーに提示する内容
 
 ```
+【表紙プロンプト確認】
+
+スタイル: {選択スタイル名}
+カラー: {メイン} / {アクセント} / {ハイライト}
+
+プロンプト:
+---
 Professional Kindle book cover, portrait orientation 2:3 ratio (1600x2560px).
 Title: "{確定タイトル}" in large bold Japanese text, centered upper area.
 Subtitle: "{確定サブタイトル}" in smaller Japanese text below title.
@@ -455,7 +702,21 @@ Design:
 - DO NOT include any author name on the cover
 - No watermarks, no logos
 High resolution, 4K quality.
+---
+
+このプロンプトで表紙を生成してよろしいですか？
+修正があればお知らせください。
 ```
+
+**ユーザーが承認したら Phase 6 へ。修正指示があればプロンプトを修正して再提示。**
+
+承認後、`cover_prompt.txt` に保存。
+
+---
+
+## Phase 6: 表紙画像生成（gpt-image-2）
+
+**★確認3 で承認されたプロンプトで画像を生成する。**
 
 生成した画像を `output/{slug}/images/cover.jpg` に保存。
 
@@ -469,11 +730,48 @@ python scripts/validate_images.py output/{slug} cover
 
 ---
 
-## Phase 7: A+コンテンツ画像4枚生成（gpt-image-2）
+## ★確認4: 表紙画像の確認
 
-サイズ: 970×600px（横長）、形式: PNG、枚数: 4枚
+生成された表紙画像をユーザーに提示する。
 
-### 各画像の役割と生成指示
+```
+表紙画像が生成されました。確認してください。
+
+ファイル: output/{slug}/images/cover.jpg
+サイズ: {W}x{H}px, {N}KB
+
+問題なければ「OK」、再生成する場合は修正指示をお知らせください。
+```
+
+**ユーザーが承認したら ★確認5 へ。再生成指示があれば Phase 6 を再実行。**
+
+---
+
+## ★確認5: A+コンテンツプロンプト確認
+
+A+コンテンツ画像4枚のプロンプトを**ユーザーに提示して承認を得る。**
+
+### 提示する内容
+
+```
+【A+コンテンツ画像プロンプト確認】（4枚 / 各970×600px）
+
+■ aplus_1.png（問題提起）
+{プロンプト全文}
+
+■ aplus_2.png（煽り・共感）
+{プロンプト全文}
+
+■ aplus_3.png（解決策）
+{プロンプト全文}
+
+■ aplus_4.png（CTA）
+{プロンプト全文}
+
+これらのプロンプトで画像を生成してよろしいですか？
+```
+
+### 各画像のプロンプト生成ルール
 
 #### aplus_1.png（問題提起）
 ```
@@ -504,6 +802,14 @@ Energetic accent colors. Book cover or reading device featured.
 Professional banner, call-to-action focused, no composition labels, 4K.
 ```
 
+**ユーザーが承認したら Phase 7 へ。**
+
+---
+
+## Phase 7: A+画像4枚生成（gpt-image-2）
+
+**★確認5 で承認されたプロンプトで画像を生成する。**
+
 ### Phase 7 完了時の検証（必須）
 
 ```bash
@@ -514,51 +820,26 @@ python scripts/validate_images.py output/{slug} aplus
 
 ---
 
-## Phase 8: Kindle申請データ出力
+## ★確認6: A+画像4枚の確認
 
-### 生成内容
+生成されたA+画像4枚をユーザーに提示する。
 
-`templates/kindle_app_template.txt` を参照し、以下を含むこと:
+```
+A+コンテンツ画像4枚が生成されました。確認してください。
 
-1. タイトル・サブタイトル・著者名（漢字・カタカナ・ローマ字の3表記）
-2. 書籍説明文（PASONA法則 / HTML / 3,000〜4,000字厳守）
-3. カテゴリー5つ（各カテゴリー横に1位書籍の総合ランキング順位を併記）
-4. キーワード30個以上（7マス × 各50文字以内）
+1. aplus_1.png（問題提起）— {N}KB
+2. aplus_2.png（煽り・共感）— {N}KB
+3. aplus_3.png（解決策）— {N}KB
+4. aplus_4.png（CTA）— {N}KB
 
-### PASONA法則
-
-P: 問題 → A: 煽り・親近感 → S: 解決策 → O: 提案 → N: 絞り込み → A: 行動
-
-- HTML形式（`<p>`, `<strong>` タグ使用）
-- PASONA項目名は本文に出さない
-- **3,000字未満は必ず加筆して3,000字以上にすること**
-
-### カテゴリー
-
-- Web検索でAmazon Kindleカテゴリーを調査
-- 1位書籍の総合ランキングが5,000位以上のジャンルを優先
-- 必ず5つ提案
-
-出力先: `output/{slug}/kindle_application.txt`
-
-### Phase 8 完了時の検証（必須）
-
-```bash
-python scripts/validate_kindle_app.py output/{slug}
+問題なければ「OK」、再生成する場合は番号と修正指示をお知らせください。
 ```
 
-**検証基準:**
-- 総字数 >= 2,000
-- タイトル3表記（漢字・カタカナ・ローマ字）
-- 書籍説明文 >= 2,500字
-- カテゴリー 5件
-- キーワード 30個以上
+**ユーザーが承認したら Phase 8 へ。**
 
 ---
 
-## Phase 9: 統合検証
-
-すべてのPhaseが完了したら、統合検証を実行する。
+## Phase 8: 統合検証
 
 ```bash
 python scripts/validate_all.py output/{slug}
@@ -568,24 +849,33 @@ python scripts/validate_all.py output/{slug}
 1. 全検証スクリプトを順次実行
 2. 各Phaseの合否を判定
 3. `completion_report.json` を出力
-4. 総合結果（PASS/FAIL）を表示
 
-**全Phaseが PASS の場合のみ、完了報告を行う。**
+---
 
-### 完了時の報告
+## ★確認7: 最終出力の確認・完了報告
+
+統合検証の結果をユーザーに報告する。
 
 ```
 電子書籍の制作が完了しました。
 
+テーマ: {テーマ名}
+著者: {著者名}
+タイトル: {確定タイトル}
+
 成果物一覧:
-1. manuscript.md — 原稿Markdown（{N}字）
-2. research.md — リサーチ結果
-3. book_meta.md — 確定メタ情報
-4. listing.txt — 出版メタデータ
-5. cover_prompt.txt — 表紙プロンプト
-6. kindle_application.txt — Kindle申請データ
-7. images/cover.jpg — 表紙画像
-8. images/aplus_1〜4.png — A+コンテンツ画像
+1. manuscript.md — Markdown原稿（{N}字）
+2. manuscript.html — HTML原稿
+3. research.md — リサーチ結果
+4. book_meta.md — 確定メタ情報
+5. listing.txt — 出版メタデータ
+6. cover_prompt.txt — 表紙プロンプト
+7. kindle_application.txt — Kindle申請データ
+8. images/cover.jpg — 表紙画像
+9. images/aplus_1〜4.png — A+コンテンツ画像
+
+統合検証: {PASS/FAIL}
+{各Phase の結果}
 
 ※ manuscript.docx はローカル環境で pandoc 変換してください。
 ```
@@ -594,11 +884,10 @@ python scripts/validate_all.py output/{slug}
 
 ## 制約事項
 
-- Markdown表（テーブル）を原稿内で使わない
+- 表（テーブル）を原稿内で使わない
 - コードブロックを原稿内で使わない
 - 著者情報を原稿本文に入れない
 - 表紙に著者名を入れない
-- 画像タグを原稿に入れない
 - ASCII罫線図を使わない
 - **pip install は実行しない（Codexサンドボックスでは不可）**
 - **pandoc は使用しない（Codexサンドボックスでは不可）**
