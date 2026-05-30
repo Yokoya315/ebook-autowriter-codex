@@ -30,7 +30,7 @@ OpenAI Codex Cloud で **Kindle電子書籍（25,000字・5章構成）** を対
 
 | 項目 | 詳細 |
 |------|------|
-| **OpenAI** | Pro プラン契約（Codex Cloud 利用に必要） |
+| **OpenAI** | Plus プラン以上（$20/月〜。Codex Cloud 利用に必要） |
 | **GitHub** | アカウント作成済み（リポジトリ接続に必要） |
 | **Python** | 3.8 以上 |
 | **pandoc** | DOCX変換に使用（ローカル後処理） |
@@ -41,11 +41,13 @@ OpenAI Codex Cloud で **Kindle電子書籍（25,000字・5章構成）** を対
 
 ## セットアップ手順
 
-### Step 1: OpenAI Pro 契約
+### Step 1: OpenAI Plus 以上の契約
 
 1. [OpenAI](https://platform.openai.com/) にログイン
-2. Settings → Billing → **Pro プラン** に変更
+2. Settings → Billing → **Plus プラン**（$20/月）以上に変更
 3. 左メニューの **Codex** が利用可能になったことを確認
+
+> Plus（$20/月）でも Codex は利用可能です。Pro（$100/月）は5倍、Pro（$200/月）は20倍の利用枠があります。
 
 ### Step 2: GitHub リポジトリの準備
 
